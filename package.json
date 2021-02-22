@@ -1,7 +1,7 @@
 {
   "name": "Electron-client",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "main.js",
   "repository": "https://github.com/MrAndersonf/Electron-client.git",
   "author": "Anderson Feitosa <andersonf-oliveira@live.com>",
   "license": "MIT",
@@ -15,11 +15,11 @@
     "electron": "^11.2.3",
     "electron-reload": "^1.5.0",
     "jquery": "^3.5.1",
+    "jsonfile": "^6.1.0",
     "popper.js": "^1.16.1",
-    "shell.js": "^3.2.3",
+    "shelljs": "^0.8.4",
     "socket.io": "^3.1.1",
     "socket.io-client": "^3.1.1",
     "socket.io-stream": "^0.9.1"
   }
-
 }

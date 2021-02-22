@@ -1,6 +1,8 @@
 const fs = require("fs");
-require("dotenv").config();
 const path = require("path");
+const utils = require(path.resolve(__dirname + "/../javascript/utils.js"));
+require("dotenv").config();
+
 const shell = require("shelljs");
 const Client = require("socket.io-client");
 const cp = require("child_process");
@@ -9,83 +11,51 @@ const { ipcRenderer } = require("electron");
 const templates = require(path.resolve(
   __dirname + "/../javascript/templates.js"
 ));
-
-const IOstream = require("socket.io-stream");
+const database = require(path.resolve(
+  __dirname + "/../javascript/database.js"
+));
+const serverStream = require("socket.io-stream");
 
 const socket = Client.connect(`${process.env.hostHTTP}:${process.env.port}`);
 
 const Computer = process.env.COMPUTERNAME;
 const Scripts = path.resolve(__dirname + `/../scripts/`);
 const Extracted = path.resolve(__dirname + `/../extracted/`);
+const Json = path.resolve(__dirname + `/../json/`);
 
 $(window).on("load", () => {
   setUpSystem();
+  database.storeJson(
+    path.resolve(__dirname + `/../extracted/44.json`),
+    "44",
+    "index.js"
+  );
 });
 
-function localScripts() {
-  let local = [];
-  try {
-    let files = fs.readdirSync(Extracted);
-
-    files.forEach((el, i) => {
-      let cont = fs.readdirSync(
-        path.resolve(__dirname + `/../extracted/${el}`)
-      );
-      local.push({ folder: el, content: cont });
-    });
-    return local;
-  } catch (error) {
-    console.log("dsda", error);
-  }
-}
-
 socket.on("connect", function () {
-  let localS = localScripts();
-  socket.on("identify", () => {
-    socket.emit("identification", { computer: Computer, scripts: localS });
+  socket.on("identify-client", () => {
+    socket.emit("client-socket-connection", {
+      computer: Computer,
+      scripts: utils.storedScripts(),
+    });
   });
 
-  socket.on("adm_instruction", (data) => {
-    $(`#${data.script}`).val(data.instances);
-    executeInstancesSocket(data.instances, data.script);
+  socket.on("server-generated-identification", (id) => {
+    $("#socketId").text(id);
+  });
+
+  socket.on("administrator-demands-run", ({ script, instances }) => {
+    $(`#${script}`).val(instances);
+    executeInstancesSocket(instances, script);
   });
 
   socket.on("broadcast", function (e) {
     $("#processAtivityTable").children().remove();
     e.forEach((el, i) => {
       $("#processAtivityTable").append(
-        Template.processTableRow(el.id, el.computer, "ss", "running")
+        templates.processTableRow(el.id, el.computer, "ss", "running")
       );
     });
-  });
-
-  IOstream(socket).on("sinc", function (stream, name) {
-    try {
-      let filename = Scripts + "/" + name;
-      stream.pipe(fs.createWriteStream(filename));
-      stream.on("end", function () {
-        socket.emit("extracting", Computer);
-        unzip(filename);
-        setUpSystem();
-      });
-    } catch (error) {}
-  });
-
-  socket.on("each", () => {
-    let directory = [];
-    try {
-      let files = fs.readdirSync(Extracted);
-
-      files.forEach((el, i) => {
-        let cont = fs.readdirSync(
-          path.resolve(__dirname + `/../extracted/${el}`)
-        );
-        directory.push({ folder: el, content: cont });
-      });
-      socket.emit("result", directory);
-    } catch (error) {
-      console.log("dsda", error);
-    }
   });
 
   socket.on("repo-link", (data) => {
@@ -99,15 +69,28 @@ socket.on("connect", function () {
     } catch (error) {}
   });
 
-  socket.on("down", () => {
-    console.log("Socket on down");
-    IOstream(socket).emit("sincronize");
+  socket.on("server-download-new-script", () => {
+    serverStream(socket).emit("client-request-file");
+    socket.emit("client-downloading-script", { computer: Computer });
   });
 
-  socket.on("done", () => {
-    notify("Sucesso", "arquivo Carregado no servidor");
-    $("#sincronize").attr("disabled", false);
-  });
+  serverStream(socket).on(
+    "server-sending-requested-file",
+    (stream, { name, exec }) => {
+      try {
+        let folder = Scripts + "/" + name;
+        stream.pipe(fs.createWriteStream(folder));
+        stream.on("end", function () {
+          socket.emit("client-decompressing-script", { computer: Computer });
+          setTimeout(() => {
+            unzip(folder, exec);
+            setUpSystem();
+            setUpSystem();
+          }, 1000);
+        });
+      } catch (error) {}
+    }
+  );
 });
 
 function notify(title, msg) {
@@ -142,25 +125,39 @@ ipcRenderer.on("executableInDirectory-reply", (event, execFile) => {
   name.trigger("focus");
 });
 
-async function unzip(origin) {
+async function unzip(origin, exec) {
+  socket.emit("client-dependencies-script", { computer: Computer });
+  const files = await decompress(origin, Extracted);
   try {
-    const files = await decompress(origin, Extracted);
     await execute(Extracted + "/" + files[0].path);
-    socket.emit("success-in-node", { computer: Computer });
   } catch (err) {
-    console.log("unzip");
-    socket.emit("error-in-node", { computer: Computer, error: err });
+    console.log(error);
+    socket.emit("client-error-on-installing", {
+      computer: Computer,
+      error: err,
+    });
   }
+  await database.storeJson(
+    path.resolve(__dirname + `/../extracted/${files[0].path}`),
+    files[0].path,
+    exec
+  );
+  socket.emit("client-successfuly-install-script", {
+    computer: Computer,
+    scripts: utils.storedScripts(),
+  });
 }
 
 function execute(dir) {
   try {
-    socket.emit("dependencies-in-node", { computer: Computer });
     shell.cd(dir);
     shell.config.execPath = String(shell.which("node"));
     shell.exec(`yarn install`);
   } catch (err) {
-    socket.emit("error-in-node", { computer: Computer, error: err });
+    socket.emit("client-error-on-installing", {
+      computer: Computer,
+      error: err,
+    });
   }
 }
 
@@ -175,7 +172,7 @@ function setUpSystem() {
       );
       directory.push({ folder: el, content: cont });
     });
-    console.log(directory);
+
     $("#scriptsTable").children().remove();
     directory.forEach((el, i) => {
       $("#scriptsTable").append(templates.scripts(i, el.folder));
@@ -234,5 +231,21 @@ async function veryfy(s, process) {
     default:
       console.log(data);
       break;
+  }
+}
+
+function localScripts() {
+  let savedScripts = [];
+  try {
+    let files = fs.readdirSync(Extracted);
+    files.forEach((el, i) => {
+      let cont = fs.readdirSync(
+        path.resolve(__dirname + `/../extracted/${el}`)
+      );
+      savedScripts.push({ folder: el, content: cont });
+    });
+    return savedScripts;
+  } catch (error) {
+    console.log("dsda", error);
   }
 }

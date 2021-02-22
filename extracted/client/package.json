@@ -1,0 +1,21 @@
+{
+  "name": "client",
+  "version": "1.0.0",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "bootstrap": "^4.6.0",
+    "electron": "^11.2.3",
+    "electron-reload": "^1.5.0",
+    "fs-extra": "^9.1.0",
+    "jquery": "^3.5.1",
+    "jsonfile": "^6.1.0",
+    "popper.js": "^1.16.1",
+    "shelljs": "^0.8.4",
+    "socket.io": "^3.1.1",
+    "socket.io-client": "^3.1.1"
+  }
+}
