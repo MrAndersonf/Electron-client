@@ -23,14 +23,15 @@ const Scripts = path.resolve(__dirname + `/../scripts/`);
 const Extracted = path.resolve(__dirname + `/../extracted/`);
 const Json = path.resolve(__dirname + `/../json/`);
 
-$(window).on("load", () => {
-  setUpSystem();
-  database.storeJson(
-    path.resolve(__dirname + `/../extracted/44.json`),
-    "44",
-    "index.js"
-  );
-});
+$(window).on("load", () => setUpSystem());
+
+function instancesToRun(script, instances) {
+  $(`#instances${script}`).val(instances);
+}
+
+function statusScript(script, text) {
+  $(`#status${script}`).text(text);
+}
 
 socket.on("connect", function () {
   socket.on("identify-client", () => {
@@ -41,12 +42,23 @@ socket.on("connect", function () {
   });
 
   socket.on("server-generated-identification", (id) => {
-    $("#socketId").text(id);
+    $("#socket_id").text(id);
   });
 
   socket.on("administrator-demands-run", ({ script, instances }) => {
-    $(`#${script}`).val(instances);
-    executeInstancesSocket(instances, script);
+    try {
+      instancesToRun(script, instances);
+      statusScript(script, "Rodando");
+      notify("Executar", `O script ${script} será executado.`);
+      setTimeout(() => {
+        executeInstancesSocket(instances, script);
+      }, 1500);
+    } catch (error) {
+      socket.emit("client-error-on-installing", {
+        computer: Computer,
+        error: err,
+      });
+    }
   });
 
   socket.on("broadcast", function (e) {
@@ -58,15 +70,30 @@ socket.on("connect", function () {
     });
   });
 
+  socket.on("server-administrator-demands-end", (pid) => {
+    manageProcess(pid);
+  });
+
   socket.on("repo-link", (data) => {
+    socket.emit("client-downloading-script", { computer: Computer });
     try {
       const file = Extracted;
       shell.cd(file);
       shell.config.execPath = String(shell.which("node"));
       shell.exec(`git clone ${data.url}`);
+      socket.emit("client-cloning-repository", { computer: Computer });
       execute(file);
       setUpSystem();
-    } catch (error) {}
+      socket.emit("client-successfuly-install-script", {
+        computer: Computer,
+        scripts: utils.storedScripts(),
+      });
+    } catch (error) {
+      socket.emit("client-error-on-installing", {
+        computer: Computer,
+        error: err,
+      });
+    }
   });
 
   socket.on("server-download-new-script", () => {
@@ -84,11 +111,14 @@ socket.on("connect", function () {
           socket.emit("client-decompressing-script", { computer: Computer });
           setTimeout(() => {
             unzip(folder, exec);
-            setUpSystem();
-            setUpSystem();
           }, 1000);
         });
-      } catch (error) {}
+      } catch (error) {
+        socket.emit("client-error-on-installing", {
+          computer: Computer,
+          error: err,
+        });
+      }
     }
   );
 });
@@ -146,6 +176,7 @@ async function unzip(origin, exec) {
     computer: Computer,
     scripts: utils.storedScripts(),
   });
+  setUpSystem();
 }
 
 function execute(dir) {
@@ -180,7 +211,6 @@ function setUpSystem() {
   } catch (error) {
     console.log("dsda", error);
   }
-  return;
 }
 
 function executeInstances(file) {
@@ -196,25 +226,51 @@ function executeInstancesSocket(times, file) {
   }
 }
 
-async function executeScript(file) {
-  let processIdentification = await cp.spawn("node", [
+function manageProcess(id) {
+  console.log("antes ", runningScripts);
+  runningScripts.forEach((el) => {
+    if (el.pid == id) {
+      el.process.kill("SIGKILL");
+    }
+  });
+  runningScripts.slice(
+    runningScripts.indexOf((el) => el.pid == id),
+    1
+  );
+  console.log("depois ", runningScripts);
+}
+
+let runningScripts = [];
+function executeScript(file) {
+  let processIdentification = cp.spawn("node", [
     `${path.resolve(__dirname + "/../extracted/" + file + "/index.js")}`,
   ]);
 
-  await processIdentification.stdout.on("data", function (data) {
+  (async () => {
+    console.log("enviado");
+    $(`#process${file}`).text(processIdentification.pid);
+    socket.emit("client-running-pid", processIdentification.pid);
+    runningScripts.push({
+      pid: processIdentification.pid,
+      process: processIdentification,
+    });
+  })();
+
+  processIdentification.stdout.on("data", function (data) {
     veryfy(data, processIdentification);
+    socket.emit("process-output", Buffer.from(data).toString("utf8"));
   });
-  await processIdentification.stdout.on("message", function (data) {});
+  processIdentification.stdout.on("message", function (data) {});
 
-  await processIdentification.stdout.on("error", function (data) {
+  processIdentification.stdout.on("error", function (data) {
     veryfy(data);
   });
 
-  await processIdentification.stdout.on("exit", function (data) {
+  processIdentification.stdout.on("exit", function (data) {
     veryfy(data);
   });
 
-  await processIdentification.stdout.on("code", function (data) {
+  processIdentification.stdout.on("code", function (data) {
     veryfy(data);
   });
 }

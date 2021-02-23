@@ -35,8 +35,9 @@ module.exports = {
         <tr>
             <td>${id}</td>
             <td>${script}</td>
-            <td"><div><input id="${script}style="border: transparent" type="number" value="0" min="0" step="1"/></div></td>
-            <td>Parado</td>
+            <td><div><input id="instances${script}" style="border: transparent" type="number" value="0" min="0" step="1"/></div></td>
+            <td id="status${script}">Parado</td>
+            <td id="process${script}">----</td>
             <td>
             <div class="actionButtomsSection">
                     <button class="customBtnAction">${icon.trash()}</button>
